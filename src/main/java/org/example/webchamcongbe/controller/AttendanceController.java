@@ -5,7 +5,6 @@ import org.example.webchamcongbe.service.AttendanceService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
-
 import java.util.List;
 
 @RestController
@@ -40,5 +39,19 @@ public class AttendanceController {
     public ResponseEntity<Void> deleteAttendance(@PathVariable Long id) {
         attendanceService.deleteAttendance(id);
         return ResponseEntity.noContent().build();
+    }
+
+    // 🔒 HR khóa bảng chấm công
+    @PostMapping("/lock/{departmentId}")
+    public ResponseEntity<String> lockDepartment(@PathVariable Long departmentId) {
+        attendanceService.lockDepartment(departmentId);
+        return ResponseEntity.ok("✅ Đã khóa bảng chấm công của phòng ban ID = " + departmentId);
+    }
+
+    // 🔓 HR mở khóa bảng chấm công
+    @PostMapping("/unlock/{departmentId}")
+    public ResponseEntity<String> unlockDepartment(@PathVariable Long departmentId) {
+        attendanceService.unlockDepartment(departmentId);
+        return ResponseEntity.ok("🔓 Đã mở khóa bảng chấm công của phòng ban ID = " + departmentId);
     }
 }
