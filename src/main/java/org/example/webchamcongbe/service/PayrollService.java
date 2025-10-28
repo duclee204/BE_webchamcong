@@ -1,16 +1,18 @@
 package org.example.webchamcongbe.service;
 
 import org.example.webchamcongbe.dto.PayrollDTO;
-import org.example.webchamcongbe.model.Employee;
 import org.example.webchamcongbe.model.Payroll;
-import org.example.webchamcongbe.repository.EmployeeRepository;
 import org.example.webchamcongbe.repository.PayrollRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.io.*;
+import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
-import java.util.Optional;
 import java.util.stream.Collectors;
+
+import jakarta.servlet.http.HttpServletResponse;
 
 @Service
 public class PayrollService {
@@ -18,107 +20,127 @@ public class PayrollService {
     @Autowired
     private PayrollRepository payrollRepository;
 
-    @Autowired
-    private EmployeeRepository employeeRepository;
+    // Convert Entity <-> DTO
+    private PayrollDTO convertToDTO(Payroll payroll) {
+        PayrollDTO dto = new PayrollDTO();
+        dto.setId(payroll.getId());
+        dto.setEmployeeId(payroll.getEmployeeId());
+        dto.setMonth(payroll.getMonth());
+        dto.setYear(payroll.getYear());
+        dto.setBaseSalary(payroll.getBaseSalary());
+        dto.setAllowance(payroll.getAllowance());
+        dto.setOvertimePay(payroll.getOvertimePay());
+        dto.setBonus(payroll.getBonus());
+        dto.setPenalty(payroll.getPenalty());
+        dto.setDeductions(payroll.getDeductions());
+        dto.setTax(payroll.getTax());
+        dto.setTotalSalary(payroll.getTotalSalary());
+        dto.setStatus(payroll.getStatus());
+        dto.setCreatedAt(payroll.getCreatedAt());
+        dto.setUpdatedAt(payroll.getUpdatedAt());
+        return dto;
+    }
 
+    // Lấy tất cả bảng lương
     public List<PayrollDTO> getAllPayrolls() {
         return payrollRepository.findAll().stream()
                 .map(this::convertToDTO)
                 .collect(Collectors.toList());
     }
 
-    public PayrollDTO getById(Long id) {
-        Optional<Payroll> payroll = payrollRepository.findById(id);
-        return payroll.map(this::convertToDTO).orElse(null);
-    }
-
-    public List<PayrollDTO> getByEmployee(Long employeeId) {
-        return payrollRepository.findByEmployee_Id(employeeId)
-                .stream().map(this::convertToDTO)
-                .collect(Collectors.toList());
-    }
-
-    public PayrollDTO createPayroll(PayrollDTO dto) {
-        if (payrollRepository.existsByEmployee_IdAndMonthAndYear(dto.getEmployeeId(), dto.getMonth(), dto.getYear())) {
-            throw new RuntimeException("Payroll record already exists for this employee and month.");
+    // Tính lương
+    public PayrollDTO calculatePayroll(Long employeeId, int month, int year, BigDecimal baseSalary) {
+        if (payrollRepository.existsByEmployeeIdAndMonthAndYear(employeeId, month, year)) {
+            throw new RuntimeException("Payroll already exists for this employee in this period");
         }
 
-        Employee employee = employeeRepository.findById(dto.getEmployeeId())
-                .orElseThrow(() -> new RuntimeException("Employee not found"));
+        BigDecimal allowance = new BigDecimal("1000000");
+        BigDecimal overtimePay = new BigDecimal("500000");
+        BigDecimal bonus = new BigDecimal("300000");
+        BigDecimal penalty = new BigDecimal("100000");
+        BigDecimal deductions = new BigDecimal("500000");
+        BigDecimal tax = baseSalary.multiply(new BigDecimal("0.05"));
+        BigDecimal totalSalary = baseSalary
+                .add(allowance)
+                .add(overtimePay)
+                .add(bonus)
+                .subtract(penalty)
+                .subtract(deductions)
+                .subtract(tax);
 
-        Payroll payroll = convertToEntity(dto);
-        payroll.setEmployee(employee);
+        Payroll payroll = new Payroll();
+        payroll.setEmployeeId(employeeId);
+        payroll.setMonth(month);
+        payroll.setYear(year);
+        payroll.setBaseSalary(baseSalary);
+        payroll.setAllowance(allowance);
+        payroll.setOvertimePay(overtimePay);
+        payroll.setBonus(bonus);
+        payroll.setPenalty(penalty);
+        payroll.setDeductions(deductions);
+        payroll.setTax(tax);
+        payroll.setTotalSalary(totalSalary);
+        payroll.setStatus("COMPLETED");
+        payroll.setCreatedAt(Instant.now());
+        payroll.setUpdatedAt(Instant.now());
+
         return convertToDTO(payrollRepository.save(payroll));
     }
 
-    public PayrollDTO updatePayroll(Long id, PayrollDTO dto) {
-        Payroll existing = payrollRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Payroll not found"));
+    // -------------------------------
+    // XUẤT FILE CSV (Excel có thể mở được)
+    // -------------------------------
+    public void exportPayrollToCSV(HttpServletResponse response, int month, int year) throws IOException {
+        List<Payroll> payrolls = payrollRepository.findByMonthAndYear(month, year);
 
-        if (dto.getTotalWorkHours() != null) existing.setTotalWorkHours(dto.getTotalWorkHours());
-        if (dto.getTotalWorkDays() != null) existing.setTotalWorkDays(dto.getTotalWorkDays());
-        if (dto.getBaseSalary() != null) existing.setBaseSalary(dto.getBaseSalary());
-        if (dto.getAllowance() != null) existing.setAllowance(dto.getAllowance());
-        if (dto.getOvertimePay() != null) existing.setOvertimePay(dto.getOvertimePay());
-        if (dto.getDeductions() != null) existing.setDeductions(dto.getDeductions());
-        if (dto.getTax() != null) existing.setTax(dto.getTax());
-        if (dto.getBonus() != null) existing.setBonus(dto.getBonus());
-        if (dto.getPenalty() != null) existing.setPenalty(dto.getPenalty());
-        if (dto.getTotalSalary() != null) existing.setTotalSalary(dto.getTotalSalary());
-        if (dto.getStatus() != null) existing.setStatus(dto.getStatus());
-        if (dto.getUpdatedAt() != null) existing.setUpdatedAt(dto.getUpdatedAt());
+        response.setContentType("text/csv");
+        response.setHeader("Content-Disposition", "attachment; filename=payroll_" + month + "_" + year + ".csv");
 
-        return convertToDTO(payrollRepository.save(existing));
-    }
+        PrintWriter writer = response.getWriter();
+        writer.println("ID,Employee ID,Base Salary,Total Salary,Status");
 
-    public void deletePayroll(Long id) {
-        if (!payrollRepository.existsById(id)) {
-            throw new RuntimeException("Payroll not found");
+        for (Payroll p : payrolls) {
+            writer.println(String.join(",",
+                    String.valueOf(p.getId()),
+                    String.valueOf(p.getEmployeeId()),
+                    p.getBaseSalary().toString(),
+                    p.getTotalSalary().toString(),
+                    p.getStatus()
+            ));
         }
-        payrollRepository.deleteById(id);
+
+        writer.flush();
+        writer.close();
     }
 
-    // --- Convert ---
-    private PayrollDTO convertToDTO(Payroll p) {
-        return new PayrollDTO(
-                p.getId(),
-                p.getEmployee() != null ? p.getEmployee().getId() : null,
-                p.getMonth(),
-                p.getYear(),
-                p.getTotalWorkHours(),
-                p.getTotalWorkDays(),
-                p.getBaseSalary(),
-                p.getAllowance(),
-                p.getOvertimePay(),
-                p.getDeductions(),
-                p.getTax(),
-                p.getBonus(),
-                p.getPenalty(),
-                p.getTotalSalary(),
-                p.getStatus(),
-                p.getCreatedAt(),
-                p.getUpdatedAt()
-        );
-    }
+    // -------------------------------
+    // XUẤT FILE HTML -> In ra PDF (Frontend)
+    // -------------------------------
+    public String generatePayrollHTML(int month, int year) {
+        List<Payroll> payrolls = payrollRepository.findByMonthAndYear(month, year);
 
-    private Payroll convertToEntity(PayrollDTO dto) {
-        Payroll p = new Payroll();
-        p.setId(dto.getId());
-        p.setMonth(dto.getMonth());
-        p.setYear(dto.getYear());
-        p.setTotalWorkHours(dto.getTotalWorkHours());
-        p.setTotalWorkDays(dto.getTotalWorkDays());
-        p.setBaseSalary(dto.getBaseSalary());
-        p.setAllowance(dto.getAllowance());
-        p.setOvertimePay(dto.getOvertimePay());
-        p.setDeductions(dto.getDeductions());
-        p.setTax(dto.getTax());
-        p.setBonus(dto.getBonus());
-        p.setPenalty(dto.getPenalty());
-        p.setTotalSalary(dto.getTotalSalary());
-        p.setStatus(dto.getStatus());
-        p.setCreatedAt(dto.getCreatedAt());
-        p.setUpdatedAt(dto.getUpdatedAt());
-        return p;
+        StringBuilder html = new StringBuilder();
+        html.append("<html><head><meta charset='UTF-8'><title>Bảng lương tháng ")
+                .append(month).append("/").append(year)
+                .append("</title></head><body>");
+        html.append("<h2 style='text-align:center;'>BẢNG LƯƠNG THÁNG ").append(month).append("/").append(year).append("</h2>");
+        html.append("<table border='1' cellspacing='0' cellpadding='5' style='width:100%; border-collapse:collapse;'>");
+        html.append("<tr><th>ID</th><th>Employee ID</th><th>Base Salary</th><th>Total Salary</th><th>Status</th></tr>");
+
+        for (Payroll p : payrolls) {
+            html.append("<tr>")
+                    .append("<td>").append(p.getId()).append("</td>")
+                    .append("<td>").append(p.getEmployeeId()).append("</td>")
+                    .append("<td>").append(p.getBaseSalary()).append("</td>")
+                    .append("<td>").append(p.getTotalSalary()).append("</td>")
+                    .append("<td>").append(p.getStatus()).append("</td>")
+                    .append("</tr>");
+        }
+
+        html.append("</table>");
+        html.append("<script>window.print();</script>");
+        html.append("</body></html>");
+
+        return html.toString();
     }
 }

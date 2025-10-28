@@ -7,6 +7,7 @@ import org.example.webchamcongbe.repository.EmployeeRepository;
 import org.example.webchamcongbe.repository.RequestRepository;
 import org.springframework.stereotype.Service;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -20,36 +21,102 @@ public class RequestService {
         this.employeeRepository = employeeRepository;
     }
 
+    // =============================
+    // 1. Lấy danh sách request
+    // =============================
     public List<RequestDTO> getAllRequests() {
         return requestRepository.findAll().stream()
                 .map(this::convertToDTO)
                 .collect(Collectors.toList());
     }
 
+    // =============================
+    // 2. Nhân viên tạo request
+    // =============================
     public RequestDTO createRequest(RequestDTO dto) {
         Employee employee = employeeRepository.findById(dto.getEmployeeId())
                 .orElseThrow(() -> new RuntimeException("Employee not found"));
 
-        Employee approver = null;
-        if (dto.getApproverId() != null) {
-            approver = employeeRepository.findById(dto.getApproverId())
-                    .orElse(null);
-        }
-
         Request request = new Request();
         request.setEmployee(employee);
-        request.setApprover(approver);
         request.setRequestType(dto.getRequestType());
         request.setStartTime(dto.getStartTime());
         request.setEndTime(dto.getEndTime());
         request.setReason(dto.getReason());
-        request.setStatus(dto.getStatus());
-        request.setApprovedAt(dto.getApprovedAt());
+        request.setStatus("PENDING"); // mặc định chờ duyệt
 
         requestRepository.save(request);
         return convertToDTO(request);
     }
 
+    // =============================
+    // 3. Nhân viên chỉnh sửa request (chưa được duyệt / từ chối)
+    // =============================
+    public RequestDTO updateRequest(Long requestId, RequestDTO dto) {
+        Request request = requestRepository.findById(requestId)
+                .orElseThrow(() -> new RuntimeException("Request not found"));
+
+        // Không cho sửa nếu đã duyệt hoặc từ chối
+        if ("APPROVED".equalsIgnoreCase(request.getStatus()) || "REJECTED".equalsIgnoreCase(request.getStatus())) {
+            throw new RuntimeException("Request đã được xử lý, không thể chỉnh sửa!");
+        }
+
+        // Chỉ cho phép nhân viên tạo request đó chỉnh sửa
+        if (!request.getEmployee().getId().equals(dto.getEmployeeId())) {
+            throw new RuntimeException("Bạn không có quyền chỉnh sửa request của người khác!");
+        }
+
+        // Cập nhật nội dung
+        request.setRequestType(dto.getRequestType());
+        request.setStartTime(dto.getStartTime());
+        request.setEndTime(dto.getEndTime());
+        request.setReason(dto.getReason());
+
+        requestRepository.save(request);
+        return convertToDTO(request);
+    }
+
+    // =============================
+    // 4. Nhân viên xóa request (chưa duyệt / chưa từ chối)
+    // =============================
+    public void deleteRequest(Long requestId, Long employeeId) {
+        Request request = requestRepository.findById(requestId)
+                .orElseThrow(() -> new RuntimeException("Request not found"));
+
+        // Không cho xóa nếu đã duyệt hoặc từ chối
+        if ("APPROVED".equalsIgnoreCase(request.getStatus()) || "REJECTED".equalsIgnoreCase(request.getStatus())) {
+            throw new RuntimeException("Request đã được xử lý, không thể xóa!");
+        }
+
+        // Chỉ cho phép nhân viên tạo request đó xóa
+        if (!request.getEmployee().getId().equals(employeeId)) {
+            throw new RuntimeException("Bạn không có quyền xóa request của người khác!");
+        }
+
+        requestRepository.delete(request);
+    }
+
+    // =============================
+    // 5. Admin duyệt / từ chối
+    // =============================
+    public RequestDTO approveOrRejectRequest(Long requestId, Long approverId, boolean approved) {
+        Request request = requestRepository.findById(requestId)
+                .orElseThrow(() -> new RuntimeException("Request not found"));
+
+        Employee approver = employeeRepository.findById(approverId)
+                .orElseThrow(() -> new RuntimeException("Approver not found"));
+
+        request.setApprover(approver);
+        request.setStatus(approved ? "APPROVED" : "REJECTED");
+        request.setApprovedAt(Instant.now());
+
+        requestRepository.save(request);
+        return convertToDTO(request);
+    }
+
+    // =============================
+    // 6. Convert sang DTO
+    // =============================
     private RequestDTO convertToDTO(Request request) {
         RequestDTO dto = new RequestDTO();
         dto.setId(request.getId());
