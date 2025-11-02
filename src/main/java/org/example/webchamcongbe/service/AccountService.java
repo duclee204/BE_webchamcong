@@ -1,5 +1,6 @@
 package org.example.webchamcongbe.service;
 
+import io.jsonwebtoken.security.Keys;
 import org.example.webchamcongbe.dto.AccountDTO;
 import org.example.webchamcongbe.model.Account;
 import org.example.webchamcongbe.model.Employee;
@@ -8,13 +9,18 @@ import org.example.webchamcongbe.repository.AccountRepository;
 import org.example.webchamcongbe.repository.EmployeeRepository;
 import org.example.webchamcongbe.repository.RoleRepository;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.SignatureAlgorithm;
 
+import javax.crypto.SecretKey;
+import java.util.Date;
 @Service
 public class AccountService {
 
@@ -26,6 +32,9 @@ public class AccountService {
 
     @Autowired
     private EmployeeRepository employeeRepository;
+
+    @Autowired
+    private PasswordEncoder passwordEncoder;
 
     // Lấy tất cả tài khoản
     public List<AccountDTO> getAllAccounts() {
@@ -54,7 +63,7 @@ public class AccountService {
 
         Account account = new Account();
         account.setUsername(dto.getUsername());
-        account.setPassword(dto.getPassword());
+        account.setPassword(passwordEncoder.encode(dto.getPassword()));
         account.setRole(role);
         account.setEmployee(employee);
         account.setStatus(dto.getStatus());
@@ -107,4 +116,14 @@ public class AccountService {
                 account.getCreatedAt()
         );
     }
+
+    public Account validateLogin(String username, String password) {
+        Account account = accountRepository.findByUsername(username)
+                .orElseThrow(() -> new RuntimeException("Username not found"));
+        if (!passwordEncoder.matches(password, account.getPassword())) {
+            throw new RuntimeException("Invalid password");
+        }
+        return account;
+    }
+
 }
